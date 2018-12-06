@@ -1,0 +1,79 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: "AWS GuardDutyFindings Lambda Deployment"
+Resources:
+  GDF1LambdaRole: 
+    Type: "AWS::IAM::Role"
+    Properties: 
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement: 
+          - Action:
+              - "sts:AssumeRole"
+            Effect: Allow
+            Principal:
+              Service:
+                - "lambda.amazonaws.com"
+      Path: "/"
+  GDF1LambdaPolicy:
+    DependsOn: 
+      - GDF1LambdaRole
+    Type: "AWS::IAM::Policy"
+    Properties: 
+      PolicyName: GDFRecorderPolicy
+      Roles:
+        - !Ref GDF1LambdaRole
+      PolicyDocument: 
+        Version: "2012-10-17"
+        Statement: 
+          - Effect: Allow
+            Action: 
+              - "logs:CreateLogGroup"
+              - "logs:CreateLogStream"
+              - "logs:PutLogEvents"
+              - "logs:DescribeLogStreams"
+            Resource: 
+              - "arn:aws:logs:*:*:*"
+  GDFLambdaReporter:
+    Type: "AWS::Events::Rule"
+    Properties:
+      Description: "Reports for any GuardDutyFinding"
+      EventPattern:
+        source: 
+          - "aws.guardduty"
+        detail-type:
+          - "GuardDuty Finding"
+      State: ENABLED
+      Targets:
+        - Arn: !GetAtt
+          - GDFLambdaFunction
+          - Arn
+          Id: GDFLambdaCFNRule1  
+  PermissionsForEventsInvokingGDFLambda:
+    Type: "AWS::Lambda::Permission"
+    Properties:
+      Action: "lambda:InvokeFunction"
+      Principal: "events.amazonaws.com"
+      FunctionName: !Ref GDFLambdaFunction
+      SourceArn: !GetAtt 
+        - GDFLambdaReporter
+        - Arn
+  GDFLambdaFunction:
+    Type: "AWS::Lambda::Function"
+    DependsOn:
+      - GDF1LambdaRole
+      - GDF1LambdaPolicy
+    Properties:
+      Code:
+        S3Bucket: gdf-lambda-function
+        S3Key: gdf-lambda-package.zip
+      Handler: GDFLambda.lambda_handler
+      Role: !GetAtt
+        - GDF1LambdaRole
+        - Arn
+      Runtime: python3.6
+      MemorySize: 128
+  GDFLogGroup: 
+    Type: "AWS::Logs::LogGroup"
+    Properties: 
+      LogGroupName: "GuardDutyLogs"
+      RetentionInDays: 30
